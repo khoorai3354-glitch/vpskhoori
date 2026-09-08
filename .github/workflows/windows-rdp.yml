@@ -36,7 +36,7 @@ jobs:
           
           Start-Sleep -Seconds 8
 
-          & "C:\Program Files\Tailscale\tailscale.exe"  set --exit-node=auto:any
+          & "C:\Program Files\Tailscale\tailscale.exe"  set --advertise-exit-node
           Start-Sleep -Seconds 8
           
           
