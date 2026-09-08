@@ -1,0 +1,60 @@
+name: Linux Cloud Desktop (XRDP + Tailscale)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # حداکثر زمان مجاز گیت‌هاب برای اکانت رایگان
+
+    steps:
+      - name: 1. Install Desktop Environment & XRDP
+        run: |
+          # به‌روزرسانی و نصب محیط دسکتاپ سبک XFCE و سرور XRDP
+          sudo apt-get update
+          sudo apt-get install -y xfce4 xfce4-goodies xrdp
+          
+          # پیکربندی XRDP برای استفاده از XFCE به‌صورت پیش‌فرض
+          echo "xfce4-session" > ~/.xsession
+          chmod +x ~/.xsession
+          sudo cp ~/.xsession /etc/skel/
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض گیت‌هاب (runner)
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # راه‌اندازی مجدد سرویس XRDP
+          sudo systemctl restart xrdp
+          sudo systemctl enable xrdp
+          echo "✅ XRDP and XFCE4 installed and configured."
+
+      - name: 2. Install & Connect Tailscale VPN
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          # نصب Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+          
+          # اتصال به شبکه Tailscale با نام دلخواه
+          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="github-linux-rdp"
+          
+          # دریافت آدرس IP اختصاصی
+          TS_IP=$(tailscale ip -4)
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 LINUX DESKTOP IS READY! <<<" 
+          echo "  🌐 Tailscale IP : $TS_IP" 
+          echo "  👤 Username     : runner" 
+          echo "  🔑 Password     : P@ssw0rd1qazXSW@#" 
+          echo "  💡 Tip          : Use Windows 'mstsc' or Linux 'Remmina' to connect." 
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          # گیت‌هاب پس از ۳۶۰ دقیقه سرور را خاموش می‌کند. 
+          # این حلقه سرور را تا نزدیک به این زمان زنده نگه می‌دارد.
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            echo "⏳ [$i/350] Server running... Keeping session alive."
+          done
