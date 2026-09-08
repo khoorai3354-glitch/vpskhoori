@@ -1,0 +1,75 @@
+name: Linux Cloud Desktop (SSH + VNC + Tailscale)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # حداکثر زمان مجاز گیت‌هاب برای اکانت رایگان
+
+    steps:
+      - name: 1. Install SSH, VNC & Desktop Environment
+        run: |
+          # به‌روزرسانی مخازن
+          sudo apt-get update
+          
+          # نصب OpenSSH، محیط دسکتاپ XFCE، سرور مجازی Xvfb و سرور VNC
+          sudo apt-get install -y openssh-server xfce4 xfce4-goodies xvfb x11vnc
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض گیت‌هاب (runner)
+          # این رمز هم برای SSH و هم برای VNC استفاده می‌شود
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # شروع سرویس SSH
+          sudo systemctl start ssh
+          sudo systemctl enable ssh
+          
+          # راه‌اندازی یک نمایشگر مجازی (Virtual Display) روی پورت :99 با رزولوشن 1280x720
+          Xvfb :99 -screen 0 1280x720x24 &
+          export DISPLAY=:99
+          
+          # اجرای محیط دسکتاپ XFCE در پس‌زمینه
+          startxfce4 &
+          
+          # ساخت پوشه و تنظیم رمز عبور برای VNC
+          mkdir -p ~/.vnc
+          x11vnc -storepasswd "P@ssw0rd1qazXSW@#" ~/.vnc/passwd
+          
+          # شروع سرور VNC در پس‌زمینه (پورت پیش‌فرض 5900)
+          nohup x11vnc -display :99 -usepw -forever -shared -rfbport 5900 >/dev/null 2>&1 &
+          
+          echo "✅ SSH and VNC (XFCE4) are successfully installed and running."
+
+      - name: 2. Install & Connect Tailscale VPN
+        env:
+          TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+        run: |
+          # نصب Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sh
+          
+          # اتصال به شبکه Tailscale با نام دلخواه
+          sudo tailscale up --authkey="$TAILSCALE_AUTHKEY" --hostname="github-linux-ssh-vnc"
+          
+          # دریافت آدرس IP اختصاصی
+          TS_IP=$(tailscale ip -4)
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 LINUX SERVER IS READY! <<<" 
+          echo "  🌐 Tailscale IP : $TS_IP" 
+          echo "  👤 Username     : runner" 
+          echo "  🔑 Password     : P@ssw0rd1qazXSW@#" 
+          echo "----------------------------------------------------------"
+          echo "  💻 SSH Command  : ssh runner@$TS_IP"
+          echo "  🖥️ VNC Address  : $TS_IP:5900"
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          # گیت‌هاب پس از ۳۶۰ دقیقه سرور را خاموش می‌کند. 
+          # این حلقه سرور را تا نزدیک به این زمان زنده نگه می‌دارد.
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            echo "⏳ [$i/350] Server running... Keeping session alive."
+          done
