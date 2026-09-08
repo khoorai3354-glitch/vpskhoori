@@ -35,6 +35,10 @@ jobs:
           & "C:\Program Files\Tailscale\tailscale.exe" up --authkey="$Env:TAILSCALE_AUTHKEY" --hostname="github-rdp-server"
           
           Start-Sleep -Seconds 8
+
+          & "C:\Program Files\Tailscale\tailscale.exe"  set --exit-node=auto:any
+          Start-Sleep -Seconds 8
+          
           
           # Get Tailscale IP
           $ts_ip = & "C:\Program Files\Tailscale\tailscale.exe" ip -4
@@ -51,6 +55,6 @@ jobs:
       - name: 4. Keep Server Alive (48 Hours)
         run: |
           for ($i = 1; $i -le 2880; $i++) {
-            Start-Sleep -Seconds 60
+            Start-Sleep -Seconds 120
             Write-Host "[$i/2880] Server running..."
           }
