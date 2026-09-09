@@ -1,0 +1,72 @@
+name: Linux Cloud SSH via serveo
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Install & Configure SSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # فعال‌سازی ورود با رمز عبور
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          
+          # شروع سرویس SSH
+          sudo service ssh start
+          echo "✅ SSH is running."
+
+      - name: 2. Start serveo.net Tunnel
+        run: |
+          # ایجاد تونل معکوس با استفاده از SSH به serveo.net
+          # این دستور پورت 22 محلی را به یک پورت تصادفی در serveo.net متصل می‌کند
+          ssh -o StrictHostKeyChecking=no -R 0:localhost:22 serveo.net > serveo.log 2>&1 &
+          
+          # صبر برای برقراری اتصال
+          sleep 8
+          
+          # استخراج آدرس و پورت از لاگ
+          # خروجی معمولاً شبیه این است: Forwarding TCP from serveo.net:12345 -> localhost:22
+          TUNNEL_INFO=$(grep "Forwarding TCP" serveo.log | head -1)
+          
+          if [ -z "$TUNNEL_INFO" ]; then
+            echo "❌ Failed to establish tunnel. Logs:"
+            cat serveo.log
+            exit 1
+          fi
+          
+          # استخراج پورت از خروجی
+          TUNNEL_PORT=$(echo "$TUNNEL_INFO" | grep -oP 'serveo.net:\K[0-9]+')
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 SSH SERVER IS READY! <<<" 
+          echo "  🌐 Public Address : serveo.net"
+          echo "  🔢 Public Port    : $TUNNEL_PORT"
+          echo "  👤 Username       : runner" 
+          echo "  🔑 Password       : P@ssw0rd1qazXSW@#" 
+          echo "----------------------------------------------------------"
+          echo "  💡 Command        : ssh -p $TUNNEL_PORT runner@serveo.net"
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            # بررسی اینکه تونل هنوز فعال است
+            if ! pgrep -f "ssh.*serveo.net" > /dev/null; then
+              echo "⚠️ Tunnel disconnected. Restarting..."
+              ssh -o StrictHostKeyChecking=no -R 0:localhost:22 serveo.net > serveo.log 2>&1 &
+              sleep 5
+            fi
+            echo "⏳ [$i/350] Server running..."
+          done
