@@ -1,0 +1,58 @@
+name: Linux Cloud SSH via localhost.run
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Install & Configure SSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض runner
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # فعال‌سازی ورود با رمز عبور در SSH
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          
+          # شروع سرویس SSH
+          sudo service ssh start
+          echo "✅ SSH is running."
+
+      - name: 2. Start localhost.run Tunnel
+        run: |
+          # ایجاد تونل معکوس در پس‌زمینه و ذخیره خروجی در یک فایل
+          # دستور -R 0:localhost:22 یعنی یک پورت تصادفی را به پورت 22 محلی متصل کن
+          ssh -o StrictHostKeyChecking=no -R 0:localhost:22 nokey@localhost.run > tunnel.log 2>&1 &
+          
+          # صبر می‌کنیم تا تونل برقرار شود
+          sleep 8
+          
+          # استخراج آدرس و پورت از فایل لاگ
+          # خروجی معمولاً شبیه این است: your-tunnel.localhost.run:12345 forwards to localhost:22
+          TUNNEL_ADDR=$(grep "forwards to" tunnel.log | awk '{print $2}')
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 SSH SERVER IS READY! <<<" 
+          echo "  🔗 Connection Address: $TUNNEL_ADDR"
+          echo "  👤 Username          : runner" 
+          echo "  🔑 Password          : P@ssw0rd1qazXSW@#" 
+          echo "  💡 Command           : ssh -p <PORT> runner@<DOMAIN>"
+          echo "     (مثال: ssh -p 12345 runner@abcde.localhost.run)"
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            # ارسال یک سیگنال ساده برای زنده نگه داشتن اتصال SSH تونل
+            ssh -o StrictHostKeyChecking=no -O check nokey@localhost.run > /dev/null 2>&1 || true
+            echo "⏳ [$i/350] Server running..."
+          done
