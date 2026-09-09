@@ -27,22 +27,35 @@ jobs:
 
       - name: 2. Install & Start bore Tunnel
         run: |
-          # دانلود bore (ابزار بسیار سبک - فقط یک فایل باینری)
-          curl -L https://github.com/ekzhang/bore/releases/latest/download/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz -o bore.tar.gz
+          # دانلود آخرین نسخه bore با استفاده از API گیت‌هاب
+          # این روش همیشه آخرین نسخه را پیدا می‌کند و نیازی به دانستن شماره نسخه نیست
+          BORE_URL=$(curl -s https://api.github.com/repos/ekzhang/bore/releases/latest | grep "browser_download_url.*x86_64-unknown-linux-musl.tar.gz" | cut -d '"' -f 4)
+          
+          echo "Downloading bore from: $BORE_URL"
+          curl -L "$BORE_URL" -o bore.tar.gz
+          
+          # استخراج فایل
           tar -xzf bore.tar.gz
           sudo mv bore /usr/local/bin/
           
-          # انتخاب یک پورت تصادفی برای bore (مثلاً 23456)
+          # انتخاب یک پورت تصادفی برای bore
           BORE_PORT=$((RANDOM % 10000 + 20000))
           
           # شروع تونل در پس‌زمینه
-          # این دستور پورت 22 محلی را به bore.pub روی پورت BORE_PORT متصل می‌کند
           nohup bore local 22 --to bore.pub --port $BORE_PORT > bore.log 2>&1 &
           
           # صبر برای برقراری اتصال
           sleep 5
           
-          # نمایش اطلاعات اتصال
+          # بررسی اینکه آیا bore واقعاً اجرا شده است
+          if pgrep -x "bore" > /dev/null; then
+            echo "✅ bore tunnel is running"
+          else
+            echo "❌ bore failed to start. Check logs:"
+            cat bore.log
+            exit 1
+          fi
+          
           echo ""
           echo "==========================================================" 
           echo "  >>> 🐧 SSH SERVER IS READY! <<<" 
