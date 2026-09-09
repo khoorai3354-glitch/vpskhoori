@@ -1,0 +1,67 @@
+name: Linux Cloud SSH via ngrok
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+
+    steps:
+      - name: 1. Install & Configure SSH
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openssh-server
+          
+          # تنظیم رمز عبور برای کاربر پیش‌فرض runner
+          echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
+          
+          # اجازه دادن به ورود با رمز عبور در SSH
+          sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          
+          # شروع سرویس SSH
+          sudo service ssh start
+          echo "✅ SSH is running."
+
+      - name: 2. Install & Start ngrok Tunnel
+        env:
+          NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+        run: |
+          # دانلود و نصب ngrok
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update
+          sudo apt install -y ngrok
+          
+          # تنظیم توکن احراز هویت ngrok
+          ngrok config add-authtoken $NGROK_AUTH_TOKEN
+          
+          # ایجاد تونل TCP روی پورت 22 (پورت SSH) در پس‌زمینه
+          nohup ngrok tcp 22 --log=stdout > ngrok.log 2>&1 &
+          
+          # صبر کردن برای بالا آمدن تونل
+          sleep 5
+          
+          # استخراج آدرس و پورت عمومی از API داخلی ngrok
+          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | grep -o '"public_url":"[^"]*"' | cut -d'"' -f4)
+          
+          echo ""
+          echo "==========================================================" 
+          echo "  >>> 🐧 SSH SERVER IS READY VIA NGROK! <<<" 
+          echo "  🔗 Connection String: $NGROK_URL"
+          echo "  👤 Username          : runner" 
+          echo "  🔑 Password          : P@ssw0rd1qazXSW@#" 
+          echo "  💡 Command           : ssh -p <PORT> runner@<HOST>"
+          echo "     (مثال: ssh -p 12345 runner@0.tcp.ngrok.io)"
+          echo "==========================================================" 
+
+      - name: 3. Keep Server Alive (Max 350 mins)
+        run: |
+          for ((i=1; i<=350; i++)); do
+            sleep 60
+            # جلوگیری از خواب رفتن سیستم و بررسی وضعیت ngrok
+            curl -s http://localhost:4040/api/tunnels > /dev/null
+            echo "⏳ [$i/350] Server running..."
+          done
