@@ -1,4 +1,4 @@
-name: Linux Cloud SSH via localhost.run
+name: Linux Cloud SSH via bore
 
 on:
   workflow_dispatch:
@@ -17,7 +17,7 @@ jobs:
           # تنظیم رمز عبور برای کاربر پیش‌فرض runner
           echo "runner:P@ssw0rd1qazXSW@#" | sudo chpasswd
           
-          # فعال‌سازی ورود با رمز عبور در SSH
+          # فعال‌سازی ورود با رمز عبور
           sudo sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
           
@@ -25,34 +25,38 @@ jobs:
           sudo service ssh start
           echo "✅ SSH is running."
 
-      - name: 2. Start localhost.run Tunnel
+      - name: 2. Install & Start bore Tunnel
         run: |
-          # ایجاد تونل معکوس در پس‌زمینه و ذخیره خروجی در یک فایل
-          # دستور -R 0:localhost:22 یعنی یک پورت تصادفی را به پورت 22 محلی متصل کن
-          ssh -o StrictHostKeyChecking=no -R 0:localhost:22 nokey@localhost.run > tunnel.log 2>&1 &
+          # دانلود bore (ابزار بسیار سبک - فقط یک فایل باینری)
+          curl -L https://github.com/ekzhang/bore/releases/latest/download/bore-v0.5.2-x86_64-unknown-linux-musl.tar.gz -o bore.tar.gz
+          tar -xzf bore.tar.gz
+          sudo mv bore /usr/local/bin/
           
-          # صبر می‌کنیم تا تونل برقرار شود
-          sleep 8
+          # انتخاب یک پورت تصادفی برای bore (مثلاً 23456)
+          BORE_PORT=$((RANDOM % 10000 + 20000))
           
-          # استخراج آدرس و پورت از فایل لاگ
-          # خروجی معمولاً شبیه این است: your-tunnel.localhost.run:12345 forwards to localhost:22
-          TUNNEL_ADDR=$(grep "forwards to" tunnel.log | awk '{print $2}')
+          # شروع تونل در پس‌زمینه
+          # این دستور پورت 22 محلی را به bore.pub روی پورت BORE_PORT متصل می‌کند
+          nohup bore local 22 --to bore.pub --port $BORE_PORT > bore.log 2>&1 &
           
+          # صبر برای برقراری اتصال
+          sleep 5
+          
+          # نمایش اطلاعات اتصال
           echo ""
           echo "==========================================================" 
           echo "  >>> 🐧 SSH SERVER IS READY! <<<" 
-          echo "  🔗 Connection Address: $TUNNEL_ADDR"
-          echo "  👤 Username          : runner" 
-          echo "  🔑 Password          : P@ssw0rd1qazXSW@#" 
-          echo "  💡 Command           : ssh -p <PORT> runner@<DOMAIN>"
-          echo "     (مثال: ssh -p 12345 runner@abcde.localhost.run)"
+          echo "  🌐 Public Address : bore.pub"
+          echo "  🔢 Public Port    : $BORE_PORT"
+          echo "  👤 Username       : runner" 
+          echo "  🔑 Password       : P@ssw0rd1qazXSW@#" 
+          echo "----------------------------------------------------------"
+          echo "  💡 Command        : ssh -p $BORE_PORT runner@bore.pub"
           echo "==========================================================" 
 
       - name: 3. Keep Server Alive (Max 350 mins)
         run: |
           for ((i=1; i<=350; i++)); do
             sleep 60
-            # ارسال یک سیگنال ساده برای زنده نگه داشتن اتصال SSH تونل
-            ssh -o StrictHostKeyChecking=no -O check nokey@localhost.run > /dev/null 2>&1 || true
             echo "⏳ [$i/350] Server running..."
           done
